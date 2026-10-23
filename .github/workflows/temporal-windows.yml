@@ -1,0 +1,30 @@
+name: Temporal Windows CUDA build
+on:
+  push:
+    branches: [feat/h3-native-temporal]
+    paths:
+      - .github/workflows/temporal-windows.yml
+      - scripts/ci_temporal_windows.py
+      - comfy_kitchen/backends/cuda/native_temporal/**
+      - comfy_kitchen/backends/cuda/sage_attention/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile SM120 DLL and validate C ABI without GPU
+        run: python scripts/ci_temporal_windows.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: temporal-windows-sm120
+          path: |
+            libck_temporal_sm120.dll
+            windows_abi.json
