@@ -4,6 +4,12 @@ This branch adds an **optional, inference-only temporal overlay** for BFS MiniMa
 
 Use BFSNodes branch [`feat/h3-native-temporal`](https://github.com/alisson-anjos/ComfyUI-BFSNodes/tree/feat/h3-native-temporal), version **1.115.16 or newer**. The addon is separate from upstream Comfy Kitchen and is experimental. CUDA math and routing have been checked; full ComfyUI video quality and RTX 5090 end-to-end performance remain unverified.
 
+## Automatic first-use setup in BFS 1.115.17+
+
+On supported Linux x86_64 SM120 systems with a driver supporting CUDA 13, BFS 1.115.17+ downloads the pinned v1 API/library automatically when Kitchen/sol-attn is first selected. It verifies embedded SHA256 hashes and ABI/architecture, caches components in ComfyUI's user directory and activates them without pip, replacing Kitchen's main `_C`, or a second restart. A verified cache works offline. Failed/unsupported automatic setup retains the earlier backend with a console explanation. Existing compatible manual overlays are preferred.
+
+See [BFS automatic setup documentation](https://github.com/alisson-anjos/ComfyUI-BFSNodes/blob/feat/h3-native-temporal/H3_NATIVE_TEMPORAL.md#automatic-first-use-setup-111517). The manual steps below remain available for explicit installs or source builds.
+
 ## Install into the ComfyUI Python environment
 
 Initial support: **Linux x86_64, CUDA FP16/BF16, batch 1, 128-wide heads**, native conditioning before the target video. A Linux SM120 build was tested on an RTX PRO 6000 Blackwell. RTX 5090 is also SM120, but that machine still needs local validation.
