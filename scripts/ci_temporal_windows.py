@@ -18,8 +18,10 @@ for relative,expected in packages:
 vswhere=Path(os.environ['ProgramFiles(x86)'])/'Microsoft Visual Studio/Installer/vswhere.exe'
 vs=subprocess.check_output([str(vswhere),'-utf8','-latest','-products','*','-requires','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','-property','installationPath'],text=True,encoding='utf-8').strip().lstrip('\ufeff')
 vcvars=Path(vs)/'VC/Auxiliary/Build/vcvars64.bat'
-command='"'+str(vcvars)+'" >nul && set'
-output=subprocess.check_output([os.environ.get('COMSPEC','cmd.exe'),'/d','/s','/c','"'+command+'"'],text=True,encoding='utf-8',errors='replace')
+with tempfile.TemporaryDirectory(prefix='ck-msvc-') as temp:
+ batch=Path(temp)/'environment.cmd'
+ batch.write_text('@echo off\ncall "'+str(vcvars)+'" >nul\nif errorlevel 1 exit /b 1\nset\n',encoding='utf-8')
+ output=subprocess.check_output([os.environ.get('COMSPEC','cmd.exe'),'/d','/c',str(batch)],text=True,encoding='utf-8',errors='replace')
 env={k.upper():v for k,v in os.environ.items()}
 for line in output.splitlines():
  if '=' in line and not line.startswith('='):
