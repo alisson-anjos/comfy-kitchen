@@ -2,13 +2,19 @@
 
 This branch adds an **optional, inference-only temporal overlay** for BFS MiniMax H3 native temporal alignment. It provides one-pass dense INT8 attention and one-pass sol-attn through native CUDA kernels. Ordinary Comfy Kitchen operators and its main `_C` extension are preserved.
 
-Use BFSNodes branch [`feat/h3-native-temporal`](https://github.com/alisson-anjos/ComfyUI-BFSNodes/tree/feat/h3-native-temporal), version **1.115.16 or newer**. The addon is separate from upstream Comfy Kitchen and is experimental. CUDA math and routing have been checked; full ComfyUI video quality and RTX 5090 end-to-end performance remain unverified.
+Use BFSNodes [`main`](https://github.com/alisson-anjos/ComfyUI-BFSNodes/tree/main), version **1.115.22 or newer** for automatic multi-architecture downloads. The addon is separate from upstream Comfy Kitchen and is experimental. CUDA math and routing have been checked; full ComfyUI video quality and RTX 5090 end-to-end performance remain unverified.
 
-## Automatic first-use setup in BFS 1.115.17+
+## Automatic first-use setup in BFS 1.115.22+
 
-On supported Linux x86_64 SM120 systems with a driver supporting CUDA 13, BFS 1.115.17+ downloads the pinned v1 API/library automatically when Kitchen/sol-attn is first selected. It verifies embedded SHA256 hashes and ABI/architecture, caches components in ComfyUI's user directory and activates them without pip, replacing Kitchen's main `_C`, or a second restart. A verified cache works offline. Failed/unsupported automatic setup retains the earlier backend with a console explanation. Existing compatible manual overlays are preferred.
+On Linux x86_64 SM80/86/89/90/100/120 and Windows x86_64 SM86/89/120, with a driver supporting CUDA13, BFS 1.115.22+ downloads the pinned API and matching library automatically when Kitchen/sol-attn is first selected. The nine binaries passed CI compilation and native ABI checks; GPU execution on every architecture is not established. It verifies embedded SHA256 hashes and ABI/architecture, caches components in ComfyUI's user directory and activates them without pip, replacing Kitchen's main `_C`, or a second restart. A verified cache works offline. Failed/unsupported automatic setup retains the earlier backend with a console explanation. Existing compatible manual overlays are preferred.
 
-See [BFS automatic setup documentation](https://github.com/alisson-anjos/ComfyUI-BFSNodes/blob/feat/h3-native-temporal/H3_NATIVE_TEMPORAL.md#automatic-first-use-setup-111517). The manual steps below remain available for explicit installs or source builds.
+See [BFS automatic setup documentation](https://github.com/alisson-anjos/ComfyUI-BFSNodes/blob/main/H3_NATIVE_TEMPORAL.md#automatic-first-use-setup-111517). The manual steps below remain available for explicit installs or source builds.
+
+## Downloads
+
+[Published Linux/Windows binaries and SHA256SUMS](https://github.com/alisson-anjos/comfy-kitchen/releases/tag/temporal-native-0413d43878606425a84aa400f1e5da50ed9dcdad). [GPU-specific direct download table (4090, H100, 5090 and more)](https://github.com/alisson-anjos/ComfyUI-BFSNodes/blob/main/H3_NATIVE_TEMPORAL.md#kernel-downloads).
+
+A binary alone is not sufficient: the matching temporal Python API is required. Prefer BFS automatic setup, especially on Windows. The manual overlay installer below remains **Linux-only**. Confirm `Kitchen ONE-PASS dense kernel ACTIVE` or `Kitchen ONE-PASS sol kernel ACTIVE` in the sampling log; otherwise a compatibility path may be running.
 
 ## Install into the ComfyUI Python environment
 
