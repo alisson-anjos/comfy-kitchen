@@ -36,3 +36,15 @@ subprocess.run([sys.executable,str(native/'build.py'),'--arch',str(arch),'--jobs
 lib=ctypes.CDLL(str(dll));assert lib.ck_temporal_abi_version()==1;assert lib.ck_temporal_arch()==arch
 (root/'windows_abi.json').write_text(json.dumps({'native_abi':1,'arch':arch,'sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'bytes':dll.stat().st_size,'gpu_runtime_validation':False,'platform':'Windows','cuda':'13.0','source_commit':os.environ.get('GITHUB_SHA')},indent=2))
 print('Windows DLL build and CPU ABI checks passed')
+
+# Exercise manual overlay installation without a GPU or an existing Kitchen core.
+with tempfile.TemporaryDirectory(prefix='ck-overlay-check-') as temp:
+    target=Path(temp)/'comfy_kitchen';target.mkdir()
+    sentinel=target/'_C.original';sentinel.write_bytes(b'ordinary Kitchen core must remain unchanged')
+    original=hashlib.sha256(sentinel.read_bytes()).hexdigest()
+    subprocess.run([sys.executable,str(root/'scripts/install_temporal_overlay.py'),'--target',str(target),'--arch',str(arch),'--prebuilt',str(dll)],env=env,check=True)
+    assert hashlib.sha256(sentinel.read_bytes()).hexdigest()==original
+    installed=target/'backends/cuda/native_temporal'/dll.name
+    assert installed.is_file() and (target/'temporal_attention.py').is_file()
+    assert hashlib.sha256(installed.read_bytes()).hexdigest()==hashlib.sha256(dll.read_bytes()).hexdigest()
+print('Manual overlay installation passed without replacing the original Kitchen core')

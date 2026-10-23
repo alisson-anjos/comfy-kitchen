@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/temporal-windows.yml
       - scripts/ci_temporal_*.py
+      - scripts/install_temporal_overlay.py
       - comfy_kitchen/temporal_attention.py
       - comfy_kitchen/backends/cuda/native_temporal/**
       - comfy_kitchen/backends/cuda/sage_attention/**

@@ -14,9 +14,11 @@ See [BFS automatic setup documentation](https://github.com/alisson-anjos/ComfyUI
 
 [Published Linux/Windows binaries and SHA256SUMS](https://github.com/alisson-anjos/comfy-kitchen/releases/tag/temporal-native-0413d43878606425a84aa400f1e5da50ed9dcdad). [GPU-specific direct download table (4090, H100, 5090 and more)](https://github.com/alisson-anjos/ComfyUI-BFSNodes/blob/main/H3_NATIVE_TEMPORAL.md#kernel-downloads).
 
-A binary alone is not sufficient: the matching temporal Python API is required. Prefer BFS automatic setup, especially on Windows. The manual overlay installer below remains **Linux-only**. Confirm `Kitchen ONE-PASS dense kernel ACTIVE` or `Kitchen ONE-PASS sol kernel ACTIVE` in the sampling log; otherwise a compatibility path may be running.
+A binary alone is not sufficient: the matching temporal Python API is required. Prefer BFS automatic setup, especially on Windows. For manual Linux and Windows installation, follow the [step-by-step manual guide](MANUAL_TEMPORAL_INSTALL.md). Confirm `Kitchen ONE-PASS dense kernel ACTIVE` or `Kitchen ONE-PASS sol kernel ACTIVE` in the sampling log; otherwise a compatibility path may be running.
 
 ## Install into the ComfyUI Python environment
+
+[Complete manual installation guide for Linux and Windows, verification and use without BFS](MANUAL_TEMPORAL_INSTALL.md).
 
 Initial support: **Linux x86_64, CUDA FP16/BF16, batch 1, 128-wide heads**, native conditioning before the target video. A Linux SM120 build was tested on an RTX PRO 6000 Blackwell. RTX 5090 is also SM120, but that machine still needs local validation.
 

@@ -18,3 +18,15 @@ native=root/'comfy_kitchen/backends/cuda/native_temporal';binary=root/f'libck_te
 subprocess.run([sys.executable,str(native/'build.py'),'--arch',str(arch),'--jobs','1','--build-dir',str(cuda/'objects'),'--output',str(binary),'--nvcc',str(cuda/'bin/nvcc'),'--compiler',shutil.which('g++')],env=env,check=True)
 lib=ctypes.CDLL(str(binary));assert lib.ck_temporal_abi_version()==1 and lib.ck_temporal_arch()==arch
 (root/'linux_abi.json').write_text(json.dumps({'native_abi':1,'arch':arch,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'bytes':binary.stat().st_size,'gpu_runtime_validation':False,'platform':'Linux','cuda':'13.0','source_commit':os.environ.get('GITHUB_SHA')},indent=2))
+
+# Exercise manual overlay installation without a GPU or an existing Kitchen core.
+with tempfile.TemporaryDirectory(prefix='ck-overlay-check-') as temp:
+    target=Path(temp)/'comfy_kitchen';target.mkdir()
+    sentinel=target/'_C.original';sentinel.write_bytes(b'ordinary Kitchen core must remain unchanged')
+    original=hashlib.sha256(sentinel.read_bytes()).hexdigest()
+    subprocess.run([sys.executable,str(root/'scripts/install_temporal_overlay.py'),'--target',str(target),'--arch',str(arch),'--prebuilt',str(binary)],env=env,check=True)
+    assert hashlib.sha256(sentinel.read_bytes()).hexdigest()==original
+    installed=target/'backends/cuda/native_temporal'/binary.name
+    assert installed.is_file() and (target/'temporal_attention.py').is_file()
+    assert hashlib.sha256(installed.read_bytes()).hexdigest()==hashlib.sha256(binary.read_bytes()).hexdigest()
+print('Manual overlay installation passed without replacing the original Kitchen core')
