@@ -1,6 +1,7 @@
 """CPU-only Windows compilation/ABI check; no model downloads or GPU needed."""
 import ctypes,hashlib,json,os,shutil,subprocess,sys,tempfile,urllib.request,zipfile
 from pathlib import Path
+arch=int(os.environ.get('TEMPORAL_CUDA_ARCH','120'))
 base='https://developer.download.nvidia.com/compute/cuda/redist/'
 packages=[('cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-13.0.88-archive.zip','61760e24a44937c6c29a20ddea69067b4d3860ccd6a9a0564573f840d96e6c5f'),('cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.0.96-archive.zip','a2ed875f9997aa24904fb70cc9db3acd9308433cde99bc8e63ec1271c9da31b4'),('cuda_cccl/windows-x86_64/cuda_cccl-windows-x86_64-13.0.85-archive.zip','f4f5187f7976d8057d76e1e04e72c8b7d0a2a22793107a671ad709b1d8d3408d')]
 packages += [('cuda_crt/windows-x86_64/cuda_crt-windows-x86_64-13.0.88-archive.zip','ff413c89dbd96ed3b3dcfac923437de78acea32fb90309277197c8a127588112'),('libnvvm/windows-x86_64/libnvvm-windows-x86_64-13.0.88-archive.zip','6dda4a82d22a2c173a65c66b4b4c933e3424a56ce845e2864bdca9cc66e6c524')]
@@ -30,8 +31,8 @@ for line in output.splitlines():
 compiler=shutil.which('cl.exe',path=env['PATH']);assert compiler
 nvcc=cuda/'bin/nvcc.exe';assert nvcc.is_file()
 env['CUDA_PATH']=str(cuda);env['PATH']=str(cuda/'bin')+';'+env['PATH'];env['PYTHONUTF8']='1';env['PYTHONIOENCODING']='utf-8'
-native=root/'comfy_kitchen/backends/cuda/native_temporal';dll=root/'libck_temporal_sm120.dll'
-subprocess.run([sys.executable,str(native/'build.py'),'--arch','120','--jobs','1','--build-dir',str(cuda/'objects'),'--output',str(dll),'--nvcc',str(nvcc),'--compiler',compiler],env=env,check=True)
-lib=ctypes.CDLL(str(dll));assert lib.ck_temporal_abi_version()==1;assert lib.ck_temporal_arch()==120
-(root/'windows_abi.json').write_text(json.dumps({'native_abi':1,'arch':120,'sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'bytes':dll.stat().st_size,'gpu_runtime_validation':False},indent=2))
+native=root/'comfy_kitchen/backends/cuda/native_temporal';dll=root/f'libck_temporal_sm{arch}.dll'
+subprocess.run([sys.executable,str(native/'build.py'),'--arch',str(arch),'--jobs','1','--build-dir',str(cuda/'objects'),'--output',str(dll),'--nvcc',str(nvcc),'--compiler',compiler],env=env,check=True)
+lib=ctypes.CDLL(str(dll));assert lib.ck_temporal_abi_version()==1;assert lib.ck_temporal_arch()==arch
+(root/'windows_abi.json').write_text(json.dumps({'native_abi':1,'arch':arch,'sha256':hashlib.sha256(dll.read_bytes()).hexdigest(),'bytes':dll.stat().st_size,'gpu_runtime_validation':False,'platform':'Windows','cuda':'13.0','source_commit':os.environ.get('GITHUB_SHA')},indent=2))
 print('Windows DLL build and CPU ABI checks passed')

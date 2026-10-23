@@ -1,10 +1,11 @@
-name: Temporal Windows CUDA build
+name: Temporal kernel binaries
 on:
   push:
-    branches: [feat/h3-native-temporal]
+    branches: [main, feat/h3-native-temporal]
     paths:
       - .github/workflows/temporal-windows.yml
-      - scripts/ci_temporal_windows.py
+      - scripts/ci_temporal_*.py
+      - comfy_kitchen/temporal_attention.py
       - comfy_kitchen/backends/cuda/native_temporal/**
       - comfy_kitchen/backends/cuda/sage_attention/**
   workflow_dispatch:
@@ -12,19 +13,61 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-22.04, platform: linux, arch: '80'}
+          - {runner: ubuntu-22.04, platform: linux, arch: '86'}
+          - {runner: ubuntu-22.04, platform: linux, arch: '89'}
+          - {runner: ubuntu-22.04, platform: linux, arch: '90'}
+          - {runner: ubuntu-22.04, platform: linux, arch: '100'}
+          - {runner: ubuntu-22.04, platform: linux, arch: '120'}
+          - {runner: windows-2022, platform: windows, arch: '86'}
+          - {runner: windows-2022, platform: windows, arch: '89'}
+          - {runner: windows-2022, platform: windows, arch: '120'}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Compile SM120 DLL and validate C ABI without GPU
-        run: python scripts/ci_temporal_windows.py
+      - name: Compile and validate C ABI without GPU
+        env:
+          TEMPORAL_CUDA_ARCH: ${{ matrix.arch }}
+        run: python scripts/ci_temporal_${{ matrix.platform }}.py
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: temporal-windows-sm120
+          name: temporal-${{ matrix.platform }}-sm${{ matrix.arch }}
           path: |
-            libck_temporal_sm120.dll
-            windows_abi.json
+            libck_temporal_sm*.dll
+            libck_temporal_sm*.so
+            *_abi.json
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Prepare checksums and manifests
+        shell: python
+        run: |
+          import pathlib,hashlib,json,shutil,os
+          out=pathlib.Path('release');out.mkdir()
+          manifests=[]
+          for folder in pathlib.Path('artifacts').iterdir():
+              for path in folder.iterdir():
+                  if path.suffix in ('.so','.dll'):shutil.copy2(path,out/path.name)
+                  elif path.name.endswith('_abi.json'):manifests.append(json.loads(path.read_text()))
+          (out/'BUILD_MANIFEST.json').write_text(json.dumps({'source_commit':os.environ['GITHUB_SHA'],'builds':manifests,'gpu_runtime_validation':False},indent=2))
+          (out/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in sorted(out.iterdir()) if p.is_file()))
+          pathlib.Path('notes.md').write_text('Automated CUDA 13 builds for Linux and Windows. Native ABI checks passed. CPU runners do not validate GPU execution or video quality. These are per-commit experimental artifacts; BFS uses separately pinned manifests.\n')
+      - name: Publish per-commit experimental binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "temporal-native-${GITHUB_SHA}" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "Temporal kernels ${GITHUB_SHA:0:8}" --notes-file notes.md
