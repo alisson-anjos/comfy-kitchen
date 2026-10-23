@@ -284,11 +284,11 @@ void launch_sol_attn_temporal(
 }
 
 #include "native_error.h"
-extern "C" int64_t ck_temporal_sol_workspace(int T,int H,int n_tok) {
+CK_TEMPORAL_EXPORT int64_t ck_temporal_sol_workspace(int T,int H,int n_tok) {
     try { validate_shape(1,T,H); validate_token_aug(n_tok); return Plan(1,T,H,n_tok).total; }
     catch(const std::exception& e) { ck_temporal_set_error(e.what()); return -1; }
 }
-extern "C" int ck_temporal_sol(const void* q,const void* k,const void* v,void* out,void* workspace,
+CK_TEMPORAL_EXPORT int ck_temporal_sol(const void* q,const void* k,const void* v,void* out,void* workspace,
         const float* temporal,const float* key_bias,const int64_t* m,float tau,float scale,uint64_t stream) {
     try {
         launch_sol_attn_temporal(q,k,v,out,workspace,1,m[0],m[1],128,m[2],tau,scale,key_bias,

@@ -67,7 +67,7 @@ void launch_impl(int8_t *q, int8_t *k, int8_t *v, DTypeOut *o, float *q_scale,
 
 
 } // namespace
-extern "C" int ck_temporal_dense(const void* q,const void* k,const void* v,void* out,
+CK_TEMPORAL_EXPORT int ck_temporal_dense(const void* q,const void* k,const void* v,void* out,
         const void* qs,const void* ks,const void* vs,const float* temporal,
         const int64_t* m,float scale,uint64_t stream_ptr) {
     try {

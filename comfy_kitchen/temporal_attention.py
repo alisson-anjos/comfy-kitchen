@@ -8,6 +8,7 @@ Build the isolated native extension explicitly; existing Kitchen _C is untouched
 import ctypes as C
 from dataclasses import dataclass, field
 import math
+import sys
 from pathlib import Path
 import torch
 
@@ -59,7 +60,8 @@ class TemporalPolicy:
 def _library(device):
     major,minor=torch.cuda.get_device_capability(device);arch=f'{major}{minor}'
     if arch not in _LIBRARIES:
-        path=Path(__file__).parent/'backends/cuda/native_temporal'/f'libck_temporal_sm{arch}.so'
+        suffix='.dll' if sys.platform=='win32' else '.so'
+        path=Path(__file__).parent/'backends/cuda/native_temporal'/(f'libck_temporal_sm{arch}'+suffix)
         if not path.is_file():
             raise RuntimeError(f'Native temporal extension missing for SM{arch}. Build comfy_kitchen/backends/cuda/native_temporal/build.py --arch {arch}; existing Kitchen attention is unaffected.')
         lib=C.CDLL(str(path))
@@ -77,12 +79,12 @@ def _library(device):
 
 
 def is_available(device=None):
-    import sys
-    if not sys.platform.startswith('linux') or not torch.cuda.is_available():return False
+    if sys.platform not in ('linux','win32') or not torch.cuda.is_available():return False
     device=torch.device('cuda') if device is None else torch.device(device)
     if device.type!='cuda':return False
     major,minor=torch.cuda.get_device_capability(device)
-    return (Path(__file__).parent/'backends/cuda/native_temporal'/f'libck_temporal_sm{major}{minor}.so').is_file()
+    suffix='.dll' if sys.platform=='win32' else '.so'
+    return (Path(__file__).parent/'backends/cuda/native_temporal'/(f'libck_temporal_sm{major}{minor}'+suffix)).is_file()
 
 
 def _validate(q,k,v,policy):
