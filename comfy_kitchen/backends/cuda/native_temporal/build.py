@@ -23,6 +23,6 @@ def compile_one(src):
 with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:objects=list(pool.map(compile_one,sources))
 out=Path(args.output) if args.output else r/f'libck_temporal_sm{args.arch}.so'
 temp=out.with_suffix(out.suffix+'.building')
-subprocess.run([nvcc,'-shared','-Xcompiler=-fPIC','-Xlinker=-Bsymbolic',*[str(x) for x in objects],'-o',str(temp)],check=True)
+subprocess.run([nvcc,*(['-ccbin',args.compiler] if args.compiler else []),'-shared','-Xcompiler=-fPIC','-Xlinker=-Bsymbolic',*[str(x) for x in objects],'-o',str(temp)],check=True)
 os.replace(temp,out)
 print('built',out,flush=True)
