@@ -23,6 +23,9 @@
 
 #pragma once
 #include <climits>
+#ifdef COMFY_KITCHEN_TEMPORAL_EXTENSION
+#include "temporal_bias.cuh"
+#endif
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_pipeline_primitives.h>
@@ -47,6 +50,7 @@ enum class MaskMode {
   kCustom = 2,
   kCustomKey = 3,
   kPreparedKey = 4,
+  kTemporal = 5,
 };
 
 enum class DataType {
@@ -438,6 +442,11 @@ __device__ __forceinline__ void apply_custom_mask(
               static_cast<int64_t>(head_id) * mask_stride_h +
               static_cast<int64_t>(q_idx) * mask_stride_q +
               static_cast<int64_t>(kv_idx) * mask_stride_k;
+#ifdef COMFY_KITCHEN_TEMPORAL_EXTENSION
+          if (mask_dtype_code == -2) {
+            bias = ck_temporal_bias((int)q_idx, (int)kv_idx, static_cast<const float*>(mask));
+          } else
+#endif
           if (mask_dtype_code == 3) {
             keep = static_cast<const uint8_t *>(mask)[offset] != 0;
           } else {

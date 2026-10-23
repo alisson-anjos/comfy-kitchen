@@ -1,3 +1,5 @@
+> Experimental branch: optional [one-pass H3 temporal kernels](H3_NATIVE_TEMPORAL_KERNELS.md) for BFSNodes. Ordinary Kitchen operators remain unchanged; installation is opt-in.
+
 # Comfy Kitchen
 
 Fast kernel library for Diffusion inference with multiple compute backends.

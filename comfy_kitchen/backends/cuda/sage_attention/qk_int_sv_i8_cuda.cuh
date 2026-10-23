@@ -633,6 +633,33 @@ __device__ __forceinline__ void qk_int_sv_i8_attn_body(
             update_mdo_f32_u8<num_tiles_q, num_tiles_k, num_tiles_v>(
                 scores, RO, m, d, S_U8_OFFSET, RS_u8);
           }
+        } else if constexpr (mask_mode == MaskMode::kTemporal) {
+#ifdef COMFY_KITCHEN_TEMPORAL_EXTENSION
+          const float* temporal = static_cast<const float*>(AttnMask);
+          const uint32_t kTile0 = (K_idx_lane_base / CTA_K) * CTA_K;
+          const uint32_t qTile0 = bx * CTA_Q;
+          float tile_bias=0.f;
+          const bool constant=ck_temporal_tile_bias(qTile0,kTile0,CTA_Q,CTA_K,temporal,tile_bias);
+          if (constant && kTile0+CTA_K <= kv_len) {
+            update_mdo_i32_u8<num_tiles_q, num_tiles_k, num_tiles_v, true>(
+                RS, RO, m, d, sm_scale, S_U8_OFFSET, RS_u8, tile_bias*math::log2e);
+          } else {
+            auto &scores = reinterpret_cast<float (&)[num_tiles_q][num_tiles_k][8]>(RS);
+#pragma unroll
+            for(uint32_t fq=0;fq<num_tiles_q;++fq) {
+#pragma unroll
+              for(uint32_t fk=0;fk<num_tiles_k;++fk) {
+#pragma unroll
+                for(uint32_t e=0;e<8;++e) {
+                  const uint32_t qi=Q_idx_lane_base+fq*16+8*((e%4)/2);
+                  const uint32_t ki=K_idx_lane_base+fk*16+8*(e/4)+e%2;
+                  scores[fq][fk][e]=ki<kv_len ? math::i2f_exact(RS[fq][fk][e])*sm_scale+ck_temporal_bias(qi,ki,temporal)*math::log2e : -50000.f;
+                }
+              }
+            }
+            update_mdo_f32_u8<num_tiles_q,num_tiles_k,num_tiles_v>(scores,RO,m,d,S_U8_OFFSET,RS_u8);
+          }
+#endif
         } else if constexpr (use_fused_fp32_probabilities &&
                              mask_mode == MaskMode::kNone) {
           update_mdo_i32_u8<num_tiles_q, num_tiles_k, num_tiles_v>(
@@ -799,6 +826,33 @@ __device__ __forceinline__ void qk_int_sv_i8_attn_body(
             update_mdo_f32_u8<num_tiles_q, num_tiles_k, num_tiles_v>(
                 scores, RO, m, d, S_U8_OFFSET, RS_u8);
           }
+        } else if constexpr (mask_mode == MaskMode::kTemporal) {
+#ifdef COMFY_KITCHEN_TEMPORAL_EXTENSION
+          const float* temporal = static_cast<const float*>(AttnMask);
+          const uint32_t kTile0 = (K_idx_lane_base / CTA_K) * CTA_K;
+          const uint32_t qTile0 = bx * CTA_Q;
+          float tile_bias=0.f;
+          const bool constant=ck_temporal_tile_bias(qTile0,kTile0,CTA_Q,CTA_K,temporal,tile_bias);
+          if (constant && kTile0+CTA_K <= kv_len) {
+            update_mdo_i32_u8<num_tiles_q, num_tiles_k, num_tiles_v, true>(
+                RS, RO, m, d, sm_scale, S_U8_OFFSET, RS_u8, tile_bias*math::log2e);
+          } else {
+            auto &scores = reinterpret_cast<float (&)[num_tiles_q][num_tiles_k][8]>(RS);
+#pragma unroll
+            for(uint32_t fq=0;fq<num_tiles_q;++fq) {
+#pragma unroll
+              for(uint32_t fk=0;fk<num_tiles_k;++fk) {
+#pragma unroll
+                for(uint32_t e=0;e<8;++e) {
+                  const uint32_t qi=Q_idx_lane_base+fq*16+8*((e%4)/2);
+                  const uint32_t ki=K_idx_lane_base+fk*16+8*(e/4)+e%2;
+                  scores[fq][fk][e]=ki<kv_len ? math::i2f_exact(RS[fq][fk][e])*sm_scale+ck_temporal_bias(qi,ki,temporal)*math::log2e : -50000.f;
+                }
+              }
+            }
+            update_mdo_f32_u8<num_tiles_q,num_tiles_k,num_tiles_v>(scores,RO,m,d,S_U8_OFFSET,RS_u8);
+          }
+#endif
         } else if constexpr (use_fused_fp32_probabilities &&
                              mask_mode == MaskMode::kNone) {
           update_mdo_i32_u8<num_tiles_q, num_tiles_k, num_tiles_v>(
@@ -951,6 +1005,33 @@ __device__ __forceinline__ void qk_int_sv_i8_attn_body(
               K_idx_lane_base, scores, key_mask, sm_scale);
           update_mdo_f32_u8<num_tiles_q, num_tiles_k, num_tiles_v>(
               scores, RO, m, d, S_U8_OFFSET, RS_u8);
+        } else if constexpr (mask_mode == MaskMode::kTemporal) {
+#ifdef COMFY_KITCHEN_TEMPORAL_EXTENSION
+          const float* temporal = static_cast<const float*>(AttnMask);
+          const uint32_t kTile0 = (K_idx_lane_base / CTA_K) * CTA_K;
+          const uint32_t qTile0 = bx * CTA_Q;
+          float tile_bias=0.f;
+          const bool constant=ck_temporal_tile_bias(qTile0,kTile0,CTA_Q,CTA_K,temporal,tile_bias);
+          if (constant && kTile0+CTA_K <= kv_len) {
+            update_mdo_i32_u8<num_tiles_q, num_tiles_k, num_tiles_v, true>(
+                RS, RO, m, d, sm_scale, S_U8_OFFSET, RS_u8, tile_bias*math::log2e);
+          } else {
+            auto &scores = reinterpret_cast<float (&)[num_tiles_q][num_tiles_k][8]>(RS);
+#pragma unroll
+            for(uint32_t fq=0;fq<num_tiles_q;++fq) {
+#pragma unroll
+              for(uint32_t fk=0;fk<num_tiles_k;++fk) {
+#pragma unroll
+                for(uint32_t e=0;e<8;++e) {
+                  const uint32_t qi=Q_idx_lane_base+fq*16+8*((e%4)/2);
+                  const uint32_t ki=K_idx_lane_base+fk*16+8*(e/4)+e%2;
+                  scores[fq][fk][e]=ki<kv_len ? math::i2f_exact(RS[fq][fk][e])*sm_scale+ck_temporal_bias(qi,ki,temporal)*math::log2e : -50000.f;
+                }
+              }
+            }
+            update_mdo_f32_u8<num_tiles_q,num_tiles_k,num_tiles_v>(scores,RO,m,d,S_U8_OFFSET,RS_u8);
+          }
+#endif
         } else {
           float RS_soft[num_tiles_q][num_tiles_k][8];
           float pv_scale[num_tiles_q][2];

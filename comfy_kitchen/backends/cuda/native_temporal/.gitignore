@@ -1,0 +1,4 @@
+*.so
+*.building
+vendor/
+__pycache__/
