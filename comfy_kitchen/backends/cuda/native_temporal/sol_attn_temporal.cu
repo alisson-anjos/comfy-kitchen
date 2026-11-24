@@ -37,14 +37,14 @@
 void launch_sol_preprocess(const void*, const void*, const void*, void*, void*, void*,
                            void*, void*, void*, void*, void*, void*, void*, void*, void*,
                            void*, const void*, const void*,
-                           int, int, int, int, int, int, int,
+                           int, int, int, int, int, int, int, int,
                            int64_t, int64_t, int64_t, int64_t, int64_t, int64_t,
                            int64_t, int64_t, int64_t, float, float, int, cudaStream_t);
 size_t sol_preprocess_scratch_bytes(int, int, int);
 void launch_sol_producer(const void*, const void*, const void*, const void*,
                          const void*, const void*, void*, void*, void*, void*,
                          void*, void*, void*, void*, void*, void*, void*, void*,
-                         const void*, float, int, int, int, int, int, int, int, int,
+                         const void*, float, int, bool, int, int, int, int, int, int, int,
                          cudaStream_t);
 void launch_sol_finish(void*, void*, void*, void*, const void*, const void*, void*,
                        const void*, int, int, int, int, int, int, float, float,
@@ -54,7 +54,7 @@ void launch_sol_vtranspose(const void*, const void*, void*, void*, int, int, int
 void launch_sol_route(const void*, const void*, const void*, const void*, const void*,
                       const void*, const void*, void*, void*, void*, void*, void*, void*,
                       void*, const void*, int,
-                      int, int, int, int, int, int, int, int, int, int,
+                      int, int, int, int, int, int, int, int, int, int, int, int,
                       float, cudaStream_t);
 void launch_sol_exact_temporal(const void*, const void*, const void*, const void*, const void*,
                       const void*, const void*, const void*, const void*, const void*,
@@ -63,7 +63,7 @@ void launch_sol_exact_temporal(const void*, const void*, const void*, const void
 void launch_sol_token(const void*, const void*, const void*, void*, void*, void*, void*,
                       const void*, const void*, const void*, void*, void*,
                       void*, void*, void*, void*, void*, void*, void*, void*, void*,
-                      int, int, int, int, int, int, int, int, int, int, float, cudaStream_t);
+                      int, int, int, int, int, int, int, int, int, float, cudaStream_t);
 int sol_token_splits(int, int, int);
 
 namespace {
@@ -85,7 +85,7 @@ struct Plan {
         NTB = (T + BLK - 1) / BLK;
         Tp = NTB * BLK;
         NPAD = ((NTB + 63) / 64) * 64;      // route reads pooled keys in 64-block groups
-        NQ = NTB;
+        NQ = (T + BLK - 1) / BLK;
         const size_t bh = (size_t)B * H, tok = (size_t)B * T * H;
         size_t o = 0;
         auto take = [&](size_t bytes) { const size_t s = o; o = align16(o + bytes); return s; };
@@ -108,7 +108,7 @@ struct Plan {
         mPart   = take(bh * NQ * sizeof(float));
         lPart   = take(bh * NQ * sizeof(float));
         statsV  = take(bh * HD * sizeof(float));   // producer vamax accumulator
-        qmean   = take(bh * NPAD * HD * sizeof(float));   // f32 query-block means (coarse branch)
+        qmean   = take(bh * NQ * HD * sizeof(float));     // f32 query-block means (coarse branch, token routing)
         // token routing (empty at n_tok 0)
         const size_t on = n_tok > 0 ? 1 : 0;
         const size_t NG = (NQ + sol::TOK_GROUP - 1) / sol::TOK_GROUP, W = (NTB + 31) / 32;
@@ -164,7 +164,9 @@ void run_route_exact(const Plan& p, char* w, const void* ext_threshold, void* ou
                      thr, w + p.idx, w + p.cnt, w + p.oPart, w + p.mPart, w + p.lPart,
                      n_tok ? w + p.tokRef : nullptr, n_tok ? w + p.tokBits : nullptr,
                      blen, tail, batch, seq_len, num_heads, p.NTB, p.NPAD, p.NQ,
-                     sink_start, sink_end, sink_q_start, sink_q_end, scale_log2, stream);
+                     sink_start, sink_end, sink_q_start, sink_q_end,
+                     /*diag_lo=*/-1, /*diag_span=*/2,   // self-attention: queries and keys share one grid
+                     scale_log2, stream);
     if (n_tok)
         launch_sol_token(w + p.qmean, w + p.tokRef, w + p.tokBits,
                          w + p.gCen8, w + p.gCens, w + p.gRef, w + p.gBits,
@@ -172,7 +174,7 @@ void run_route_exact(const Plan& p, char* w, const void* ext_threshold, void* ou
                          w + p.tokHist, w + p.tokIdx, w + p.tokCnt,
                          w + p.tokPartO, w + p.tokPartM, w + p.tokPartL,
                          w + p.oPart, w + p.mPart, w + p.lPart,
-                         batch, p.Tp, num_heads, p.NQ, p.NPAD, p.NTB, n_tok, tail,
+                         batch, p.Tp, num_heads, p.NQ, p.NTB, n_tok, tail,
                          sink_q_start, sink_q_end, scale_log2, stream);
     launch_sol_exact_temporal(w + p.qiP, w + p.qs, w + p.kiP, w + p.ksb, w + p.vTi, w + p.vsc,
                      w + p.idx, w + p.cnt, w + p.oPart, w + p.mPart, w + p.lPart,
@@ -245,7 +247,7 @@ extern "C" void sol_producer_chunk(
                         w + p.qiP, w + p.qs, w + p.kiP, w + p.ksb,
                         w + p.vTi, n_tok ? w + p.vRow : nullptr, w + p.vcT, w + p.scratch,
                         w + p.cen8, w + p.cens, w + p.qmean, w + p.statsV,
-                        blen, rope_eps, rot_dim, t0, M, seq_len, p.Tp, num_heads,
+                        blen, rope_eps, rot_dim, /*split_half=*/false, t0, M, seq_len, p.Tp, num_heads,
                         p.NPAD, p.NQ, stream);
 }
 
@@ -274,7 +276,7 @@ void launch_sol_attn_temporal(
                           w + p.kciP, w + p.kcs, w + p.vcT, w + p.thr,
                           w + p.cen8, w + p.cens, w + p.vsc, w + p.qmean, w + p.scratch,
                           key_bias, blen,
-                          batch, seq_len, p.Tp, num_heads, p.NTB, p.NPAD, p.NQ,
+                          batch, seq_len, seq_len, p.Tp, num_heads, p.NTB, p.NPAD, p.NQ,
                           qs_b, qs_t, qs_h, ks_b, ks_t, ks_h, vs_b, vs_t, vs_h,
                           tau, scale_log2, elem, stream);
     launch_sol_vtranspose(v, w + p.vsc, w + p.vTi, n_tok ? w + p.vRow : nullptr, batch, seq_len, p.Tp, num_heads,
