@@ -8,6 +8,7 @@ from .backends import ascend as _ascend_backend  # noqa: F401
 from .backends import eager as _eager_backend  # noqa: F401
 from .backends import triton as _triton_backend  # noqa: F401
 from .backends.cuda import sol_attn_chunked  # chunked-producer form of sol_attn (HIP's below)
+from .backends.cuda import memmove_ as _memmove_
 from .backends.eager.quantization import DTYPE_TO_CODE
 from .backends.eager.quantization import mm_int8 as _mm_int8
 from .exceptions import (
@@ -58,6 +59,7 @@ if getattr(torch.version, "hip", None):
     if registry.is_available("hip"):
         registry.set_priority(["hip", "cuda", "triton", "eager"])
         sol_attn_chunked = _hip_backend.sol_attn_chunked
+        _memmove_ = _hip_backend.memmove_
 else:
     registry.mark_unavailable("hip", "PyTorch ROCm/HIP runtime not available")
 
@@ -92,6 +94,7 @@ __all__ = [
     "flash_attention_decode_is_available",
     "na2d",
     "na3d",
+    "window_attention",
     "sol_attn",
     "sol_attn_chunked",
     "sol_attn_is_available",
@@ -142,6 +145,7 @@ __all__ = [
     "delaunay3d",
     "mesh_bvh",
     "closest_point_on_mesh",
+    "closest_hit_on_mesh",
     "connected_components",
     "edge_collapse_checks",
     "min_cut",
@@ -150,6 +154,7 @@ __all__ = [
     "to_blocked",
     "from_blocked",
     "set_allocation_context",
+    "memmove",
     # Backend configuration
     "list_backends",
     "set_backend_priority",
@@ -190,6 +195,7 @@ def sol_attn(
     block_len: torch.Tensor | None = None,
     coarse_gate: torch.Tensor | None = None,
     token_aug: int = 0,
+    q_offset: int = 0,
 ) -> torch.Tensor:
     """Sol-Attn training-free sparse attention (arXiv 2607.24027).
 
@@ -199,7 +205,9 @@ def sol_attn(
     below roughly 12k tokens dense or a fused attention is usually faster.
 
     Args:
-        q, k, v: ``(B, T, H, 128)`` tensors, same shape and dtype. The fused
+        q, k, v: ``(B, T, H, 128)`` tensors of one dtype. k and v share a
+            length ``Tk >= T``: they may carry keys the queries leave out,
+            such as clean conditioning frames (see ``q_offset``). The fused
             backends take bfloat16 or float16; head_dim is fixed at 128.
         tau: Routing threshold in sigmas of the proxy row. Higher routes fewer
             blocks exactly: cheaper and less accurate.
@@ -207,8 +215,8 @@ def sol_attn(
         sink_blocks: ``[start, end)`` key blocks always attended exactly by every
             query -- conditioning rows, typically.
         sink_q: ``[start, end)`` query blocks that attend everything exactly.
-        key_bias: Per-key additive logit bias in natural log, ``(T,)``,
-            ``(B, T)`` or an SDPA-style ``(B|1, 1, 1, T)`` float or bool mask.
+        key_bias: Per-key additive logit bias in natural log, ``(Tk,)``,
+            ``(B, Tk)`` or an SDPA-style ``(B|1, 1, 1, Tk)`` float or bool mask.
             Honoured by the exact branch only, so biased blocks must be
             covered by ``sink_blocks``.
         topk_ratio: > 0 selects SLA-style top-k instead of the tau threshold:
@@ -226,9 +234,14 @@ def sol_attn(
             query block are routed individually, the highest-scoring ones outside
             the routed blocks, and attended exactly. The eager reference ignores
             it.
+        q_offset: Index in the key sequence of q's first token, when k and v
+            are longer than q: query ``i`` is key ``q_offset + i``, so the
+            keys before it are a prefix (cover them with ``sink_blocks`` to
+            keep them exact). It only places the band of always-exact key
+            blocks around each query block. At most ``Tk - T``.
 
     Returns:
-        ``(B, T, H, 128)`` attention output.
+        ``(B, T, H, 128)`` attention output, one row per query.
     """
     return torch.ops.comfy_kitchen.sol_attn(
         q, k, v, tau, scale,
@@ -240,7 +253,15 @@ def sol_attn(
         block_len,
         coarse_gate,
         int(token_aug),
+        int(q_offset),
     )
+
+
+def memmove(dst: torch.Tensor, src: torch.Tensor):
+    """Copy src's bytes into dst in place; the two ranges may overlap."""
+    if dst.device.type == "cuda" and registry.is_available("hip" if torch.version.hip else "cuda"):
+        return _memmove_(dst, src)
+    dst.copy_(src.clone())
 
 
 def sol_attn_is_available(device: torch.device | None = None) -> bool:
@@ -326,6 +347,47 @@ def na2d(
         [1, *kernel_size], [False, *is_causal], scale,
     )
     return out.squeeze(1)
+
+
+def window_attention(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    windows: list[int] | list[list[int]],
+    temporal_window: int | None = None,
+    clamp: bool = True,
+    scale: float | None = None,
+) -> torch.Tensor:
+    """Attention of query planes over local 2D windows of a stack of key planes.
+
+    The Tq query planes are the last Tq of the Tk key planes. Query plane i
+    attends key plane i + Tk - Tq and the ``temporal_window - 1`` before it
+    (all earlier planes when None). In key plane p a query at (y, x) attends
+    the ``windows[p]`` = (wh, ww) keys centered on (y, x), shifted inward at
+    the frame border when ``clamp`` is set (NATTEN) or cut off by it. With
+    Tq == Tk, one window and clamp this is ``na3d`` with a causal T axis.
+
+    Args:
+        q: ``(B, Tq, H, W, num_heads, head_dim)``.
+        k, v: ``(B, Tk, H, W, kv_heads, head_dim)``, kv_heads dividing
+            num_heads (grouped-query attention).
+        windows: One (wh, ww) for every key plane, or Tk of them.
+        temporal_window: Key planes each query plane attends, counting its own.
+        clamp: Shift border windows inward instead of cutting them off.
+        scale: Score scale; None means ``head_dim ** -0.5``.
+
+    Returns:
+        ``(B, Tq, H, W, num_heads, head_dim)`` attention output.
+    """
+    if windows and isinstance(windows[0], int):
+        windows = [windows]
+    if len(set(map(tuple, windows))) == 1:
+        windows = windows[:1]
+    kh = [int(wh) for wh, _ in windows]
+    kw = [int(ww) for _, ww in windows]
+    if temporal_window is None:
+        temporal_window = k.shape[1]
+    return torch.ops.comfy_kitchen.window_attention(q, k, v, kh, kw, temporal_window, clamp, scale)
 
 
 def adaln(
@@ -1073,6 +1135,7 @@ def int8_linear(
     input_act_eps: float = 0.0,
     residual: torch.Tensor | None = None,
     residual_scale: torch.Tensor | None = None,
+    weight_tiled: bool = False,
 ) -> torch.Tensor:
     """INT8 linear layer dynamically quantized.
 
@@ -1096,6 +1159,8 @@ def int8_linear(
             ``residual + residual_scale * linear(x)`` (a pre-norm block's
             addcmul), fused into the GEMM epilogue where supported.
         residual_scale: Per-channel [N] scale for the residual form.
+        weight_tiled: ``weight`` uses the resident tiled layout produced by
+            ``TensorWiseINT8Layout.optimize_for_gemm``.
 
     Returns:
         Result tensor.
@@ -1116,7 +1181,8 @@ def int8_linear(
         "residual": residual,
         "residual_scale": residual_scale,
     }
-    impl = registry.get_implementation("int8_linear", kwargs=kwargs)
+    operation = "int8_linear_tiled_weight" if weight_tiled else "int8_linear"
+    impl = registry.get_implementation(operation, kwargs=kwargs)
     return impl(**kwargs)
 
 
@@ -1200,7 +1266,7 @@ def delaunay3d(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.
 
 
 def mesh_bvh(triangles: torch.Tensor):
-    """Linear BVH over triangles (F, 3, 3) float32 for closest_point_on_mesh.
+    """Linear BVH over triangles (F, 3, 3) float32 for closest_point_on_mesh and closest_hit_on_mesh.
 
     Returns a reusable tuple (triangles in Morton order, their original ids, child links,
     node boxes).
@@ -1221,6 +1287,22 @@ def closest_point_on_mesh(
     """
     kwargs = {"bvh": bvh, "points": points, "max_dist": max_dist}
     impl = registry.get_implementation("closest_point_on_mesh", kwargs=kwargs)
+    return impl(**kwargs)
+
+
+def closest_hit_on_mesh(
+    bvh, origins: torch.Tensor, directions: torch.Tensor, tmin: float = 0.0, tmax: float = float("inf"),
+    cull_backface: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Nearest hit on the `bvh` mesh of each ray origins + t * directions, (N, 3) float32, for t in (tmin, tmax).
+
+    Triangles are double-sided unless cull_backface, which keeps those whose winding normal faces the ray; edges
+    count as inside. Returns (t (N,) float32, triangle id (N,) int64 into the triangles given to mesh_bvh); rays
+    that hit nothing get t = tmax and triangle -1.
+    """
+    kwargs = {"bvh": bvh, "origins": origins, "directions": directions, "tmin": tmin, "tmax": tmax,
+              "cull_backface": cull_backface}
+    impl = registry.get_implementation("closest_hit_on_mesh", kwargs=kwargs)
     return impl(**kwargs)
 
 
